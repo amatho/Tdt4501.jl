@@ -1,21 +1,28 @@
 module Tdt4501
 
-using JuMP
-using HiGHS
+export test
 
-greet() = "Hello World!"
+using Allocations
+using Graphs
+using HiGHS
+using Matroids
+import SCIP
 
 function test()
-    model = Model(HiGHS.Optimizer)
-    @variable(model, x >= 0)
-    @variable(model, 0 <= y <= 3)
-    @objective(model, Min, 12x + 20y)
-    @constraint(model, c1, 6x + 8y >= 100)
-    @constraint(model, c2, 7x + 12y >= 120)
-    println(model)
-    optimize!(model)
-end
+    G = path_graph(3)
+    add_edge!(G, 1, 3)
 
-export greet
+    Matroid = GraphicMatroid(G)
+    println(is_indep(Matroid, [1, 2, 3]))
+    println("Matroid rank: $(rank(Matroid))")
+
+    V = Profile([2 2 2 1; 1 1 1 2])
+    res = alloc_mnw(V)
+
+    for b in res.alloc.bundle
+        println("Bundle: $b")
+        println("Independent? $(is_indep(Matroid, b))")
+    end
+end
 
 end
