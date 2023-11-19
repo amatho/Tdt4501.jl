@@ -3,11 +3,14 @@ module Tdt4501
 export test
 
 using Allocations
-using Gurobi
+using BenchmarkTools
+import GLPK
 using Graphs
+import Gurobi
 using JuMP
 import Logging
 using Matroids
+import Random
 
 const GRB_ENV_REF = Ref{Gurobi.Env}()
 const epsilon = 1e-5
@@ -17,59 +20,97 @@ function __init__()
     global GRB_ENV_REF
     GRB_ENV_REF[] = Gurobi.Env()
 
-    debug_logger = Logging.ConsoleLogger(Logging.Debug)
+    debug_logger = Logging.ConsoleLogger(Logging.Info)
     Logging.global_logger(debug_logger)
 
     return
 end
 
 function test()
-    optimizer = optimizer_with_attributes(() -> Gurobi.Optimizer(GRB_ENV_REF[]), "LogToConsole" => 0)
+    time_limit = 30
+    gurobi = optimizer_with_attributes(() -> Gurobi.Optimizer(GRB_ENV_REF[]), "LogToConsole" => 0, "TimeLimit" => time_limit)
+    glpk = optimizer_with_attributes(GLPK.Optimizer, "tm_lim" => time_limit * 1_000)
+    seed = 42424242
 
-    G = SimpleGraph(7, 0)
-    add_edge!(G, 1, 2)
-    add_edge!(G, 2, 3)
-    add_edge!(G, 3, 4)
-    add_edge!(G, 4, 1)
+    # Warmup
+    @info "Warming up..."
+    Random.seed!(seed)
+    p1 = rand_problem(gurobi)
+    matroid_constraint_loop(p1.ctx, p1.M)
+    matroid_constraint_lazy(p1.ctx, p1.M)
+    Random.seed!(seed)
+    p2 = rand_problem(glpk)
+    matroid_constraint_loop(p2.ctx, p2.M)
+    matroid_constraint_lazy(p2.ctx, p2.M)
+    @info "Warmup finished"
 
-    add_edge!(G, 5, 6)
-    add_edge!(G, 6, 7)
-    add_edge!(G, 7, 5)
+    BenchmarkTools.DEFAULT_PARAMETERS.samples = 10
+    BenchmarkTools.DEFAULT_PARAMETERS.seconds = BenchmarkTools.DEFAULT_PARAMETERS.samples * time_limit
 
-    matroid = GraphicMatroid(G)
-    @debug "Is independent? $(is_indep(matroid, [1, 2, 3, 4]))"
-    @debug "Is independent? $(is_indep(matroid, [5, 6, 7]))"
-    @debug "Matroid rank: $(rank(matroid))"
+    @info "Benchmarking matroid constraint (loop method) with Gurobi"
+    Random.seed!(seed)
+    b = @benchmark matroid_constraint_loop(p.ctx, p.M) setup = (p = rand_problem($gurobi)) evals = 1
+    display(b)
 
-    V = Profile([2 2 2 2 1 1 1; 1 1 1 1 2 2 2])
+    @info "Benchmarking matroid constraint (lazy method) with Gurobi"
+    Random.seed!(seed)
+    b = @benchmark matroid_constraint_lazy(p.ctx, p.M) setup = (p = rand_problem($gurobi)) evals = 1
+    display(b)
 
-    loop_ctx = Allocations.init_mip(V, optimizer) |>
-               Allocations.achieve_mnw(false)
-    loop_ctx = matroid_constraint_loop(loop_ctx, matroid)
+    @info "Benchmarking matroid constraint (loop method) with GLPK"
+    Random.seed!(seed)
+    b = @benchmark matroid_constraint_loop(p.ctx, p.M) setup = (p = rand_problem($glpk)) evals = 1
+    display(b)
 
-    res = Allocations.mnw_result(loop_ctx)
-    @info "Result for loop method: $(res.alloc), mnw = $(res.mnw)"
-
-    lazy_ctx = Allocations.init_mip(V, optimizer) |>
-               Allocations.achieve_mnw(false)
-    lazy_ctx = matroid_constraint_lazy(lazy_ctx, matroid)
-
-    res = Allocations.mnw_result(lazy_ctx)
-    @info "Result for lazy method: $(res.alloc), mnw = $(res.mnw)"
+    @info "Benchmarking matroid constraint (lazy method) with GLPK"
+    Random.seed!(seed)
+    b = @benchmark matroid_constraint_lazy(p.ctx, p.M) setup = (p = rand_problem($glpk)) evals = 1
+    display(b)
 end
 
-function matroid_constraint_loop(ctx::Allocations.MIPContext, matroid::Matroid)
-    constraints = Pair[]
+function rand_problem(optimizer)
+    ctx = init_mip_ctx(rand_profile(), optimizer)
+    M = rand_matroid(ni(ctx.profile))
+    #num_agents = na(ctx.profile)
+    #num_items = ni(ctx.profile)
+    #@info "Generated problem instance with $num_agents agents and $num_items items"
+    return (ctx=ctx, M=M)
+end
+
+function rand_profile()
+    num_agents = rand(2:50)
+    num_items = rand(1:50)
+    return Profile(rand(1:10, num_agents, num_items))
+end
+
+function rand_matroid(num_items)
+    max_edges = div(num_items * (num_items - 1), 2)
+    G = SimpleGraph(num_items, rand(0:max_edges))
+    return GraphicMatroid(G)
+end
+
+function init_mip_ctx(V::Profile, optimizer)
+    return Allocations.init_mip(V, optimizer) |>
+           Allocations.achieve_mnw(false)
+end
+
+function matroid_constraint_loop(ctx::Allocations.MIPContext, M::Matroid)
     feasible = false
 
     while !feasible
-        ctx = Allocations.solve_mip(ctx)
+        try
+            ctx = Allocations.solve_mip(ctx)
+        catch
+            @error "Could not solve the MIP, most likely due to timeout"
+            return ctx
+        end
 
         feasible = true
+        constraints = Pair[]
         for B in ctx.alloc.bundle
-            if !is_indep(matroid, B)
+            if !is_indep(M, B)
                 feasible = false
-                bundle_rank = rank(matroid, B)
+                bundle_rank = rank(M, B)
                 @debug "Adding cardinality constraint for dependent set: $B => $bundle_rank"
                 push!(constraints, B => bundle_rank)
             end
@@ -84,12 +125,18 @@ function matroid_constraint_loop(ctx::Allocations.MIPContext, matroid::Matroid)
     return ctx
 end
 
-function matroid_constraint_lazy(ctx::Allocations.MIPContext, matroid::Matroid)
-    set_attribute(ctx.model, MOI.LazyConstraintCallback(), c -> _matroid_constraint_callback(c, ctx, matroid))
-    Allocations.solve_mip(ctx)
+function matroid_constraint_lazy(ctx::Allocations.MIPContext, M::Matroid)
+    set_attribute(ctx.model, MOI.LazyConstraintCallback(), c -> _matroid_constraint_callback(c, ctx, M))
+
+    try
+        Allocations.solve_mip(ctx)
+    catch
+        @error "Could not solve the MIP, most likely due to timeout"
+        return ctx
+    end
 end
 
-function _matroid_constraint_callback(cb_data, ctx, matroid::Matroid)
+function _matroid_constraint_callback(cb_data, ctx::Allocations.MIPContext, M::Matroid)
     if callback_node_status(cb_data, ctx.model) != MOI.CALLBACK_NODE_STATUS_INTEGER
         return
     end
@@ -106,8 +153,8 @@ function _matroid_constraint_callback(cb_data, ctx, matroid::Matroid)
     isnothing(check_allocation) || check_allocation(alloc)
 
     for B in alloc.bundle
-        if !is_indep(matroid, B)
-            bundle_rank = rank(matroid, B)
+        if !is_indep(M, B)
+            bundle_rank = rank(M, B)
             @debug "Adding cardinality constraint for dependent set: $B => $bundle_rank"
             for i in agents(V)
                 con = @build_constraint(sum(ctx.alloc_var[i, g] for g in B) <= bundle_rank)
