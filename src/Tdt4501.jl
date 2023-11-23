@@ -1,6 +1,6 @@
 module Tdt4501
 
-export test
+export bench
 
 using Allocations
 using BenchmarkTools
@@ -26,20 +26,18 @@ function __init__()
     return
 end
 
-function test()
-    time_limit = 30
+function bench()
+    time_limit = 300
     gurobi = optimizer_with_attributes(() -> Gurobi.Optimizer(GRB_ENV_REF[]), "LogToConsole" => 0, "TimeLimit" => time_limit)
     glpk = optimizer_with_attributes(GLPK.Optimizer, "tm_lim" => time_limit * 1_000)
     seed = 42424242
 
     # Warmup
     @info "Warming up..."
-    Random.seed!(seed)
-    p1 = rand_problem(gurobi)
+    p1 = rand_problem_stream(gurobi, Random.Xoshiro(seed))()
     matroid_constraint_loop(p1.ctx, p1.M)
     matroid_constraint_lazy(p1.ctx, p1.M)
-    Random.seed!(seed)
-    p2 = rand_problem(glpk)
+    p2 = rand_problem_stream(glpk, Random.Xoshiro(seed))()
     matroid_constraint_loop(p2.ctx, p2.M)
     matroid_constraint_lazy(p2.ctx, p2.M)
     @info "Warmup finished"
@@ -48,44 +46,43 @@ function test()
     BenchmarkTools.DEFAULT_PARAMETERS.seconds = BenchmarkTools.DEFAULT_PARAMETERS.samples * time_limit
 
     @info "Benchmarking matroid constraint (loop method) with Gurobi"
-    Random.seed!(seed)
-    b = @benchmark matroid_constraint_loop(p.ctx, p.M) setup = (p = rand_problem($gurobi)) evals = 1
+    ps = rand_problem_stream(gurobi, Random.Xoshiro(seed))
+    b = @benchmark matroid_constraint_loop(p.ctx, p.M) setup = (p = $ps()) evals = 1
     display(b)
 
     @info "Benchmarking matroid constraint (lazy method) with Gurobi"
-    Random.seed!(seed)
-    b = @benchmark matroid_constraint_lazy(p.ctx, p.M) setup = (p = rand_problem($gurobi)) evals = 1
+    ps = rand_problem_stream(gurobi, Random.Xoshiro(seed))
+    b = @benchmark matroid_constraint_lazy(p.ctx, p.M) setup = (p = $ps()) evals = 1
     display(b)
 
     @info "Benchmarking matroid constraint (loop method) with GLPK"
-    Random.seed!(seed)
-    b = @benchmark matroid_constraint_loop(p.ctx, p.M) setup = (p = rand_problem($glpk)) evals = 1
+    ps = rand_problem_stream(glpk, Random.Xoshiro(seed))
+    b = @benchmark matroid_constraint_loop(p.ctx, p.M) setup = (p = $ps()) evals = 1
     display(b)
 
     @info "Benchmarking matroid constraint (lazy method) with GLPK"
-    Random.seed!(seed)
-    b = @benchmark matroid_constraint_lazy(p.ctx, p.M) setup = (p = rand_problem($glpk)) evals = 1
+    ps = rand_problem_stream(glpk, Random.Xoshiro(seed))
+    b = @benchmark matroid_constraint_lazy(p.ctx, p.M) setup = (p = $ps()) evals = 1
     display(b)
 end
 
-function rand_problem(optimizer)
-    ctx = init_mip_ctx(rand_profile(), optimizer)
-    M = rand_matroid(ni(ctx.profile))
-    #num_agents = na(ctx.profile)
-    #num_items = ni(ctx.profile)
-    #@info "Generated problem instance with $num_agents agents and $num_items items"
-    return (ctx=ctx, M=M)
+function rand_problem_stream(optimizer, rng::Random.AbstractRNG)
+    return function ()
+        ctx = init_mip_ctx(rand_profile(rng), optimizer)
+        M = rand_matroid(ni(ctx.profile), rng)
+        (ctx=ctx, M=M)
+    end
 end
 
-function rand_profile()
-    num_agents = rand(2:50)
-    num_items = rand(1:50)
-    return Profile(rand(1:10, num_agents, num_items))
+function rand_profile(rng=Random.default_rng())
+    num_agents = rand(rng, 2:10)
+    num_items = rand(rng, (num_agents*2):(num_agents*4))
+    return Profile(rand(rng, 1:10, num_agents, num_items))
 end
 
-function rand_matroid(num_items)
+function rand_matroid(num_items, rng=Random.default_rng())
     max_edges = div(num_items * (num_items - 1), 2)
-    G = SimpleGraph(num_items, rand(0:max_edges))
+    G = SimpleGraph(num_items, rand(rng, 0:max_edges))
     return GraphicMatroid(G)
 end
 
