@@ -49,21 +49,25 @@ function bench()
     ps = rand_problem_stream(gurobi, Random.Xoshiro(seed))
     b = @benchmark matroid_constraint_loop(p.ctx, p.M) setup = (p = $ps()) evals = 1
     display(b)
+    BenchmarkTools.save("bench/gurobi_loop.json", b)
 
     @info "Benchmarking matroid constraint (lazy method) with Gurobi"
     ps = rand_problem_stream(gurobi, Random.Xoshiro(seed))
     b = @benchmark matroid_constraint_lazy(p.ctx, p.M) setup = (p = $ps()) evals = 1
     display(b)
+    BenchmarkTools.save("bench/gurobi_lazy.json", b)
 
     @info "Benchmarking matroid constraint (loop method) with GLPK"
     ps = rand_problem_stream(glpk, Random.Xoshiro(seed))
     b = @benchmark matroid_constraint_loop(p.ctx, p.M) setup = (p = $ps()) evals = 1
     display(b)
+    BenchmarkTools.save("bench/glpk_loop.json", b)
 
     @info "Benchmarking matroid constraint (lazy method) with GLPK"
     ps = rand_problem_stream(glpk, Random.Xoshiro(seed))
     b = @benchmark matroid_constraint_lazy(p.ctx, p.M) setup = (p = $ps()) evals = 1
     display(b)
+    BenchmarkTools.save("bench/glpk_lazy.json", b)
 end
 
 function rand_problem_stream(optimizer, rng::Random.AbstractRNG)
