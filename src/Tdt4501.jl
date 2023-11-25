@@ -42,7 +42,7 @@ function bench()
     matroid_constraint_lazy(p2.ctx, p2.M)
     @info "Warmup finished"
 
-    BenchmarkTools.DEFAULT_PARAMETERS.samples = 10
+    BenchmarkTools.DEFAULT_PARAMETERS.samples = 1000
     BenchmarkTools.DEFAULT_PARAMETERS.seconds = BenchmarkTools.DEFAULT_PARAMETERS.samples * time_limit
 
     @info "Benchmarking matroid constraint (loop method) with Gurobi"
@@ -78,13 +78,13 @@ function rand_problem_stream(optimizer, rng::Random.AbstractRNG)
     end
 end
 
-function rand_profile(rng=Random.default_rng())
+function rand_profile(rng::Random.AbstractRNG)
     num_agents = rand(rng, 2:10)
     num_items = rand(rng, (num_agents*2):(num_agents*4))
-    return Profile(rand(rng, 1:10, num_agents, num_items))
+    return Profile(rand(rng, 1:100, num_agents, num_items))
 end
 
-function rand_matroid(num_items, rng=Random.default_rng())
+function rand_matroid(num_items, rng::Random.AbstractRNG)
     max_edges = div(num_items * (num_items - 1), 2)
     G = SimpleGraph(num_items, rand(rng, 0:max_edges))
     return GraphicMatroid(G)
