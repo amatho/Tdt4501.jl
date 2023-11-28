@@ -1,6 +1,6 @@
 module Tdt4501
 
-export bench
+export bench_all, bench, OptimizerType, gurobi, glpk, MatroidFunction, loop, lazy
 
 using Allocations
 using BenchmarkTools
@@ -12,9 +12,13 @@ import Logging
 using Matroids
 import Random
 
+@enum OptimizerType gurobi glpk
+@enum MatroidFunction loop lazy
+
 const GRB_ENV_REF = Ref{Gurobi.Env}()
 const epsilon = 1e-5
 const check_allocation = check_partition
+const time_limit = 300
 
 function __init__()
     global GRB_ENV_REF
@@ -26,48 +30,52 @@ function __init__()
     return
 end
 
-function bench()
-    time_limit = 300
-    gurobi = optimizer_with_attributes(() -> Gurobi.Optimizer(GRB_ENV_REF[]), "LogToConsole" => 0, "TimeLimit" => time_limit)
-    glpk = optimizer_with_attributes(GLPK.Optimizer, "tm_lim" => time_limit * 1_000)
-    seed = 42424242
+function bench_all(seed=nothing; save=true, samples=1000)
+    if isnothing(seed)
+        seed = rand(UInt)
+    end
+    @info "Running all benchmarks" seed save samples
+    bench(loop, gurobi, seed, save=save, samples=samples)
+    bench(lazy, gurobi, seed, save=save, samples=samples)
+    bench(loop, glpk, seed, save=save, samples=samples)
+    bench(lazy, glpk, seed, save=save, samples=samples)
+end
 
-    # Warmup
-    @info "Warming up..."
-    p1 = rand_problem_stream(gurobi, Random.Xoshiro(seed))()
+function bench(matroid_function::MatroidFunction, optimizer_type::OptimizerType, seed::Integer; save=true, samples=1000)
+    @info "Benchmarking matroid constraint ($matroid_function method) with $(titlecase(string(optimizer_type)))"
+
+    if optimizer_type == glpk
+        opt = optimizer_with_attributes(GLPK.Optimizer, "tm_lim" => time_limit * 1_000)
+    else
+        opt = optimizer_with_attributes(() -> Gurobi.Optimizer(GRB_ENV_REF[]), "LogToConsole" => 0, "TimeLimit" => time_limit)
+    end
+
+    warmup(opt)
+
+    BenchmarkTools.DEFAULT_PARAMETERS.seconds = samples * time_limit
+    BenchmarkTools.DEFAULT_PARAMETERS.samples = samples
+
+    ps = rand_problem_stream(opt, Random.Xoshiro(seed))
+    if matroid_function == loop
+        b = @benchmark matroid_constraint_loop(p.ctx, p.M) setup = (p = $ps()) evals = 1
+    else
+        b = @benchmark matroid_constraint_lazy(p.ctx, p.M) setup = (p = $ps()) evals = 1
+    end
+
+    display(b)
+
+    if save
+        BenchmarkTools.save("bench/$(optimizer_type)_$(matroid_function).json", b)
+    end
+end
+
+function warmup(optimizer)
+    seed = 42424242
+    @debug "Warming up..."
+    p1 = rand_problem_stream(optimizer, Random.Xoshiro(seed))()
     matroid_constraint_loop(p1.ctx, p1.M)
     matroid_constraint_lazy(p1.ctx, p1.M)
-    p2 = rand_problem_stream(glpk, Random.Xoshiro(seed))()
-    matroid_constraint_loop(p2.ctx, p2.M)
-    matroid_constraint_lazy(p2.ctx, p2.M)
-    @info "Warmup finished"
-
-    BenchmarkTools.DEFAULT_PARAMETERS.samples = 1000
-    BenchmarkTools.DEFAULT_PARAMETERS.seconds = BenchmarkTools.DEFAULT_PARAMETERS.samples * time_limit
-
-    @info "Benchmarking matroid constraint (loop method) with Gurobi"
-    ps = rand_problem_stream(gurobi, Random.Xoshiro(seed))
-    b = @benchmark matroid_constraint_loop(p.ctx, p.M) setup = (p = $ps()) evals = 1
-    display(b)
-    BenchmarkTools.save("bench/gurobi_loop.json", b)
-
-    @info "Benchmarking matroid constraint (lazy method) with Gurobi"
-    ps = rand_problem_stream(gurobi, Random.Xoshiro(seed))
-    b = @benchmark matroid_constraint_lazy(p.ctx, p.M) setup = (p = $ps()) evals = 1
-    display(b)
-    BenchmarkTools.save("bench/gurobi_lazy.json", b)
-
-    @info "Benchmarking matroid constraint (loop method) with GLPK"
-    ps = rand_problem_stream(glpk, Random.Xoshiro(seed))
-    b = @benchmark matroid_constraint_loop(p.ctx, p.M) setup = (p = $ps()) evals = 1
-    display(b)
-    BenchmarkTools.save("bench/glpk_loop.json", b)
-
-    @info "Benchmarking matroid constraint (lazy method) with GLPK"
-    ps = rand_problem_stream(glpk, Random.Xoshiro(seed))
-    b = @benchmark matroid_constraint_lazy(p.ctx, p.M) setup = (p = $ps()) evals = 1
-    display(b)
-    BenchmarkTools.save("bench/glpk_lazy.json", b)
+    @debug "Warmup finished"
 end
 
 function rand_problem_stream(optimizer, rng::Random.AbstractRNG)
