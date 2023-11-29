@@ -5,6 +5,7 @@ version = "1.0.0-DEV"
 
 [deps]
 Allocations = "260a3f16-0ffa-4f23-875b-1350d3996fb5"
+BenchmarkPlots = "ab8c0f59-4072-4e0d-8f91-a91e1495eb26"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 GLPK = "60bf3e95-4087-53dc-ae20-288a0d20c6a6"
 Graphs = "86223c79-3864-5bf0-83f7-82e725a168b6"
@@ -13,3 +14,4 @@ JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 Matroids = "15f40b7d-0f0d-4bdc-ab23-18b4f9c2ce47"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
