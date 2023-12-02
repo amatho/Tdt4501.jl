@@ -30,19 +30,22 @@ function __init__()
     return
 end
 
-function bench_all(seed=nothing; save=true, samples=1000)
+function bench_all(; seed=nothing, save=true, samples=1000)
     if isnothing(seed)
         seed = rand(UInt)
     end
-    @info "Running all benchmarks" seed save samples
+    @info "Running all benchmarks" seed=string(seed) save samples
     bench(loop, gurobi, seed, save=save, samples=samples)
     bench(lazy, gurobi, seed, save=save, samples=samples)
     bench(loop, glpk, seed, save=save, samples=samples)
     bench(lazy, glpk, seed, save=save, samples=samples)
 end
 
-function bench(matroid_function::MatroidFunction, optimizer_type::OptimizerType, seed::Integer; save=true, samples=1000)
-    @info "Benchmarking matroid constraint ($matroid_function method) with $(titlecase(string(optimizer_type)))"
+function bench(matroid_function::MatroidFunction, optimizer_type::OptimizerType; seed=nothing, save=true, samples=1000)
+    if isnothing(seed)
+        seed = rand(UInt)
+    end
+    @info "Benchmarking matroid constraint ($matroid_function method) with $(titlecase(string(optimizer_type)))" seed=string(seed) save samples
 
     if optimizer_type == glpk
         opt = optimizer_with_attributes(GLPK.Optimizer, "tm_lim" => time_limit * 1_000)
@@ -65,7 +68,9 @@ function bench(matroid_function::MatroidFunction, optimizer_type::OptimizerType,
     display(b)
 
     if save
-        BenchmarkTools.save("bench/$(optimizer_type)_$(matroid_function).json", b)
+        path = "bench/$(optimizer_type)_$(matroid_function).json"
+        @info "Saving benchmark trial to $path"
+        BenchmarkTools.save(path, b)
     end
 end
 
