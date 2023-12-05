@@ -35,10 +35,10 @@ function bench_all(; seed=nothing, save=true, samples=1000)
         seed = rand(UInt)
     end
     @info "Running all benchmarks" seed=string(seed) save samples
-    bench(loop, gurobi, seed, save=save, samples=samples)
-    bench(lazy, gurobi, seed, save=save, samples=samples)
-    bench(loop, glpk, seed, save=save, samples=samples)
-    bench(lazy, glpk, seed, save=save, samples=samples)
+    bench(loop, gurobi, seed=seed, save=save, samples=samples)
+    bench(lazy, gurobi, seed=seed, save=save, samples=samples)
+    bench(loop, glpk, seed=seed, save=save, samples=samples)
+    bench(lazy, glpk, seed=seed, save=save, samples=samples)
 end
 
 function bench(matroid_function::MatroidFunction, optimizer_type::OptimizerType; seed=nothing, save=true, samples=1000)
