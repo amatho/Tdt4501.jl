@@ -1,8 +1,19 @@
 module Tdt4501
 
-export bench_all, bench, OptimizerType, gurobi, glpk, MatroidFunction, loop, lazy
+export bench_all,
+    bench,
+    plot_gurobi,
+    plot_glpk,
+    plot_comparison,
+    OptimizerType,
+    gurobi,
+    glpk,
+    MatroidFunction,
+    loop,
+    lazy
 
 using Allocations
+using BenchmarkPlots
 using BenchmarkTools
 import GLPK
 using Graphs
@@ -11,6 +22,8 @@ using JuMP
 import Logging
 using Matroids
 import Random
+using StatsPlots
+using Unitful
 
 @enum OptimizerType gurobi glpk
 @enum MatroidFunction loop lazy
@@ -30,22 +43,56 @@ function __init__()
     return
 end
 
+function plot_gurobi()
+    gurobi_loop = first(BenchmarkTools.load("bench/gurobi_loop.json"))
+    gurobi_lazy = first(BenchmarkTools.load("bench/gurobi_lazy.json"))
+
+    p = palette(:default)
+    boxplot(gurobi_loop.times * u"ns", yunit=u"ms", yscale=:log10, ylabel="time", color=p[1], legend=false)
+    boxplot!(gurobi_lazy.times * u"ns", color=p[2])
+    xticks!([1, 2], ["Gurobi Loop", "Gurobi Lazy"])
+end
+
+function plot_glpk()
+    glpk_loop = first(BenchmarkTools.load("bench/glpk_loop.json"))
+    glpk_lazy = first(BenchmarkTools.load("bench/glpk_lazy.json"))
+
+    p = palette(:default)
+    boxplot(glpk_loop.times * u"ns", yunit=u"ms", yscale=:log10, ylabel="time", color=p[3], legend=false)
+    boxplot!(glpk_lazy.times * u"ns", color=p[4])
+    xticks!([1, 2], ["GLPK Loop", "GLPK Lazy"])
+end
+
+function plot_comparison()
+    gurobi_loop = first(BenchmarkTools.load("bench/gurobi_loop.json"))
+    gurobi_lazy = first(BenchmarkTools.load("bench/gurobi_lazy.json"))
+    glpk_loop = first(BenchmarkTools.load("bench/glpk_loop.json"))
+    glpk_lazy = first(BenchmarkTools.load("bench/glpk_lazy.json"))
+
+    p = palette(:default)
+    boxplot(gurobi_loop.times * u"ns", yunit=u"ms", yscale=:log10, ylabel="time", color=p[1], legend=false)
+    boxplot!(gurobi_lazy.times * u"ns", color=p[2])
+    boxplot!(glpk_loop.times * u"ns", color=p[3])
+    boxplot!(glpk_lazy.times * u"ns", color=p[4])
+    xticks!([1, 2, 3, 4], ["Gurobi Loop", "Gurobi Lazy", "GLPK Loop", "GLPK Lazy"])
+end
+
 function bench_all(; seed=nothing, save=true, samples=1000)
     if isnothing(seed)
         seed = rand(UInt)
     end
-    @info "Running all benchmarks" seed=string(seed) save samples
-    bench(loop, gurobi, seed=seed, save=save, samples=samples)
-    bench(lazy, gurobi, seed=seed, save=save, samples=samples)
-    bench(loop, glpk, seed=seed, save=save, samples=samples)
-    bench(lazy, glpk, seed=seed, save=save, samples=samples)
+    @info "Running all benchmarks" seed = string(seed) save samples
+    bench(gurobi, loop, seed=seed, save=save, samples=samples)
+    bench(gurobi, lazy, seed=seed, save=save, samples=samples)
+    bench(glpk, loop, seed=seed, save=save, samples=samples)
+    bench(glpk, lazy, seed=seed, save=save, samples=samples)
 end
 
-function bench(matroid_function::MatroidFunction, optimizer_type::OptimizerType; seed=nothing, save=true, samples=1000)
+function bench(optimizer_type::OptimizerType, matroid_function::MatroidFunction; seed=nothing, save=true, samples=1000)
     if isnothing(seed)
         seed = rand(UInt)
     end
-    @info "Benchmarking matroid constraint ($matroid_function method) with $(titlecase(string(optimizer_type)))" seed=string(seed) save samples
+    @info "Benchmarking matroid constraint ($matroid_function method) with $(titlecase(string(optimizer_type)))" seed = string(seed) save samples
 
     if optimizer_type == glpk
         opt = optimizer_with_attributes(GLPK.Optimizer, "tm_lim" => time_limit * 1_000)
@@ -85,8 +132,9 @@ end
 
 function rand_problem_stream(optimizer, rng::Random.AbstractRNG)
     return function ()
-        ctx = init_mip_ctx(rand_profile(rng), optimizer)
-        M = rand_matroid(ni(ctx.profile), rng)
+        V = rand_profile(rng)
+        M = rand_matroid(ni(V), rng)
+        ctx = init_mip_ctx(V, optimizer)
         (ctx=ctx, M=M)
     end
 end
@@ -114,8 +162,8 @@ function matroid_constraint_loop(ctx::Allocations.MIPContext, M::Matroid)
     while !feasible
         try
             ctx = Allocations.solve_mip(ctx)
-        catch
-            @error "Could not solve the MIP, most likely due to timeout"
+        catch error
+            @error "Could not solve the MIP, most likely due to timeout" error termination_status(ctx.model) raw_status(ctx.model)
             return ctx
         end
 
@@ -170,8 +218,9 @@ function _matroid_constraint_callback(cb_data, ctx::Allocations.MIPContext, M::M
         if !is_indep(M, B)
             bundle_rank = rank(M, B)
             @debug "Adding cardinality constraint for dependent set: $B => $bundle_rank"
+            A = ctx.alloc_var
             for i in agents(V)
-                con = @build_constraint(sum(ctx.alloc_var[i, g] for g in B) <= bundle_rank)
+                con = @build_constraint(sum(A[i, g] for g in B) <= bundle_rank)
                 MOI.submit(ctx.model, MOI.LazyConstraint(cb_data), con)
             end
         end
