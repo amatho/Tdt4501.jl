@@ -134,7 +134,7 @@ function rand_problem_stream(optimizer, rng::Random.AbstractRNG)
     return function ()
         V = rand_profile(rng)
         M = rand_matroid(ni(V), rng)
-        ctx = init_mip_ctx(V, optimizer)
+        ctx = init_mip_ctx(V, optimizer, M)
         (ctx=ctx, M=M)
     end
 end
@@ -147,12 +147,12 @@ end
 
 function rand_matroid(num_items, rng::Random.AbstractRNG)
     max_edges = div(num_items * (num_items - 1), 2)
-    G = SimpleGraph(num_items, rand(rng, 0:max_edges))
+    G = SimpleGraph(num_items, rand(rng, 3:max_edges))
     return GraphicMatroid(G)
 end
 
-function init_mip_ctx(V::Profile, optimizer)
-    return Allocations.init_mip(V, optimizer) |>
+function init_mip_ctx(V::Profile, optimizer, M::Matroid)
+    return Allocations.init_mip(V, optimizer) |> # TODO: Add rank of matroid as max bundle size
            Allocations.achieve_mnw(false)
 end
 

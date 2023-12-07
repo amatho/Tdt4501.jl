@@ -37,8 +37,10 @@ weakdeps = ["StaticArrays"]
     AdaptStaticArraysExt = "StaticArrays"
 
 [[deps.Allocations]]
-deps = ["DataStructures", "Graphs", "HiGHS", "JuMP", "Random"]
-git-tree-sha1 = "e0d97ee1ffd91fbd040636b6816c019db9f1b305"
+deps = ["DataStructures", "Graphs", "HiGHS", "JuMP", "Random", "SnoopPrecompile"]
+git-tree-sha1 = "9eb9589e671993f49c73b4caf95454258e23367b"
+repo-rev = "593d7d6c68426331a37d3f82d4f118fd3689a091"
+repo-url = "https://github.com/mlhetland/Allocations.jl.git"
 uuid = "260a3f16-0ffa-4f23-875b-1350d3996fb5"
 version = "0.1.0"
 
