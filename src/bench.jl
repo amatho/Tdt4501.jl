@@ -28,10 +28,16 @@ function bench(optimizer_type::OptimizerType, matroid_function::MatroidFunction;
 
     ps = ProblemStream(opt, Random.Xoshiro(seed), samples)
 
-    if matroid_function == loop
-        b = @benchmark matroid_constraint_loop(p.ctx, p.M) setup = (p = iterate($ps)[1]) evals = 1
-    else
-        b = @benchmark matroid_constraint_lazy(p.ctx, p.M) setup = (p = iterate($ps)[1]) evals = 1
+    local b
+    try
+        if matroid_function == loop
+            b = @benchmark matroid_constraint_loop(p.ctx, p.M) setup = (p = iterate($ps)[1]) evals = 1
+        else
+            b = @benchmark matroid_constraint_lazy(p.ctx, p.M) setup = (p = iterate($ps)[1]) evals = 1
+        end
+    catch err
+        @error "Benchmark failed" err
+        return
     end
 
     display(b)

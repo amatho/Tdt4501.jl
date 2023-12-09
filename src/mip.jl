@@ -9,9 +9,13 @@ function matroid_constraint_loop(ctx::Allocations.MIPContext, M::Matroid)
     while !feasible
         try
             ctx = Allocations.solve_mip(ctx)
-        catch error
-            @error "Could not solve the MIP, most likely due to timeout" error termination_status(ctx.model) raw_status(ctx.model)
-            return ctx
+        catch
+            if termination_status(ctx.model) == MOI.TIME_LIMIT
+                return ctx
+            else
+                @error "Could not solve the MIP" termination_status(ctx.model) raw_status(ctx.model)
+                rethrow()
+            end
         end
 
         feasible = true
@@ -40,8 +44,12 @@ function matroid_constraint_lazy(ctx::Allocations.MIPContext, M::Matroid)
     try
         Allocations.solve_mip(ctx)
     catch
-        @error "Could not solve the MIP, most likely due to timeout"
-        return ctx
+        if termination_status(ctx.model) == MOI.TIME_LIMIT
+            return ctx
+        else
+            @error "Could not solve the MIP" termination_status(ctx.model) raw_status(ctx.model)
+            rethrow()
+        end
     end
 end
 

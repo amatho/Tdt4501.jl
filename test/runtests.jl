@@ -22,7 +22,7 @@ using Test
 
         @test p1 == p2 && p2 == p3 && p3 == p4
     end
-    
+
     @testset "matroid constraints" begin
         # Test correctness of matroid constraint methods
         # Profile is designed to give agents dependent bundles when ran without matroid constraints.
