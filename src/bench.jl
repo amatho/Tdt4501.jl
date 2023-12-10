@@ -1,19 +1,19 @@
-function bench_all(; seed=nothing, save=true, samples=1000)
+function bench_all(; seed=nothing, save=true, samples=1000, log_each=nothing)
     if isnothing(seed)
         seed = rand(UInt)
     end
-    @info "Running all benchmarks" seed = string(seed) save samples
-    bench(gurobi, loop, seed=seed, save=save, samples=samples)
-    bench(gurobi, lazy, seed=seed, save=save, samples=samples)
-    bench(glpk, loop, seed=seed, save=save, samples=samples)
-    bench(glpk, lazy, seed=seed, save=save, samples=samples)
+    @info "Running all benchmarks" seed = string(seed) save samples log_each
+    bench(gurobi, loop, seed=seed, save=save, samples=samples, log_each=log_each)
+    bench(gurobi, lazy, seed=seed, save=save, samples=samples, log_each=log_each)
+    bench(glpk, loop, seed=seed, save=save, samples=samples, log_each=log_each)
+    bench(glpk, lazy, seed=seed, save=save, samples=samples, log_each=log_each)
 end
 
-function bench(optimizer_type::OptimizerType, matroid_function::MatroidFunction; seed=nothing, save=true, samples=1000)
+function bench(optimizer_type::OptimizerType, matroid_function::MatroidFunction; seed=nothing, save=true, samples=1000, log_each=nothing)
     if isnothing(seed)
         seed = rand(UInt)
     end
-    @info "Benchmarking matroid constraint ($matroid_function method) with $(titlecase(string(optimizer_type)))" seed = string(seed) save samples
+    @info "Benchmarking matroid constraint ($matroid_function method) with $(titlecase(string(optimizer_type)))" seed = string(seed) save samples log_each
 
     if optimizer_type == glpk
         opt = optimizer_with_attributes(GLPK.Optimizer, "tm_lim" => time_limit * 1_000)
@@ -26,14 +26,20 @@ function bench(optimizer_type::OptimizerType, matroid_function::MatroidFunction;
     BenchmarkTools.DEFAULT_PARAMETERS.seconds = samples * time_limit
     BenchmarkTools.DEFAULT_PARAMETERS.samples = samples
 
-    ps = ProblemStream(opt, Random.Xoshiro(seed), samples)
+    ps = ProblemStream(opt, Random.Xoshiro(seed), typemax(Int), log_each)
+    state = 1
+    function next_problem()
+        (p, s) = iterate(ps, state)
+        state = s
+        p
+    end
 
     local b
     try
         if matroid_function == loop
-            b = @benchmark matroid_constraint_loop(p.ctx, p.M) setup = (p = iterate($ps)[1]) evals = 1
+            b = @benchmark matroid_constraint_loop(p.ctx, p.M) setup = (p = $next_problem()) evals = 1
         else
-            b = @benchmark matroid_constraint_lazy(p.ctx, p.M) setup = (p = iterate($ps)[1]) evals = 1
+            b = @benchmark matroid_constraint_lazy(p.ctx, p.M) setup = (p = $next_problem()) evals = 1
         end
     catch err
         @error "Benchmark failed" err
