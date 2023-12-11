@@ -37,7 +37,7 @@ function bench(optimizer_type::OptimizerType, matroid_function::Union{MatroidFun
     local b
     try
         if isnothing(matroid_function)
-            b = @benchmark Allocations.solve_mip(p.ctx) setup = (p = $next_problem()) evals = 1
+            b = @benchmark unconstrained_mnw(p.ctx) setup = (p = $next_problem()) evals = 1
         elseif matroid_function == loop
             b = @benchmark matroid_constraint_loop(p.ctx, p.M) setup = (p = $next_problem()) evals = 1
         else

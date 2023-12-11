@@ -81,3 +81,16 @@ function _matroid_constraint_callback(cb_data, ctx::Allocations.MIPContext, M::M
         end
     end
 end
+
+function unconstrained_mnw(ctx::Allocations.MIPContext)
+    try
+        ctx = Allocations.solve_mip(ctx)
+    catch
+        if termination_status(ctx.model) == MOI.TIME_LIMIT
+            return ctx
+        else
+            @error "Could not solve the MIP" termination_status(ctx.model) raw_status(ctx.model)
+            rethrow()
+        end
+    end
+end
