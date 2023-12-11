@@ -11,7 +11,8 @@ struct ProblemStream
     rng::Random.AbstractRNG
     length::Int
     log_each::Union{Int,Nothing}
-    ProblemStream(optimizer, rng, length, log_each=nothing) = new(optimizer, rng, length, log_each)
+    ignore_matroid::Bool
+    ProblemStream(optimizer, rng, length, log_each=nothing, ignore_matroid=false) = new(optimizer, rng, length, log_each, ignore_matroid)
 end
 
 function Base.iterate(ps::ProblemStream, state=1)

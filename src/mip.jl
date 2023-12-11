@@ -1,5 +1,5 @@
-function init_mip_ctx(V::Profile, optimizer, M::Matroid)
-    return Allocations.init_mip(V, optimizer, max_bundle=rank(M)) |>
+function init_mip_ctx(V::Profile, optimizer, M::Matroid, ignore_matroid::Bool)
+    return Allocations.init_mip(V, optimizer, max_bundle=ignore_matroid ? nothing : rank(M)) |>
            Allocations.achieve_mnw(false)
 end
 

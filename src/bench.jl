@@ -9,7 +9,7 @@ function bench_all(; seed=nothing, save=true, samples=1000, log_each=nothing)
     bench(glpk, lazy, seed=seed, save=save, samples=samples, log_each=log_each)
 end
 
-function bench(optimizer_type::OptimizerType, matroid_function::MatroidFunction; seed=nothing, save=true, samples=1000, log_each=nothing)
+function bench(optimizer_type::OptimizerType, matroid_function::Union{MatroidFunction, Nothing}; seed=nothing, save=true, samples=1000, log_each=nothing)
     if isnothing(seed)
         seed = rand(UInt)
     end
@@ -26,7 +26,7 @@ function bench(optimizer_type::OptimizerType, matroid_function::MatroidFunction;
     BenchmarkTools.DEFAULT_PARAMETERS.seconds = samples * time_limit
     BenchmarkTools.DEFAULT_PARAMETERS.samples = samples
 
-    ps = ProblemStream(opt, Random.Xoshiro(seed), typemax(Int), log_each)
+    ps = ProblemStream(opt, Random.Xoshiro(seed), typemax(Int), log_each, isnothing(matroid_function))
     state = 1
     function next_problem()
         (p, s) = iterate(ps, state)
@@ -36,7 +36,9 @@ function bench(optimizer_type::OptimizerType, matroid_function::MatroidFunction;
 
     local b
     try
-        if matroid_function == loop
+        if isnothing(matroid_function)
+            b = @benchmark Allocations.solve_mip(p.ctx) setup = (p = $next_problem()) evals = 1
+        elseif matroid_function == loop
             b = @benchmark matroid_constraint_loop(p.ctx, p.M) setup = (p = $next_problem()) evals = 1
         else
             b = @benchmark matroid_constraint_lazy(p.ctx, p.M) setup = (p = $next_problem()) evals = 1
@@ -67,7 +69,7 @@ end
 function rand_problem(ps::ProblemStream)
     V = rand_profile(ps.rng)
     M = rand_matroid(ni(V), ps.rng)
-    ctx = init_mip_ctx(V, ps.optimizer, M)
+    ctx = init_mip_ctx(V, ps.optimizer, M, ps.ignore_matroid)
     ProblemInstance(ctx, M)
 end
 
