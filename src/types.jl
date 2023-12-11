@@ -7,7 +7,7 @@ struct ProblemInstance
 end
 
 struct ProblemStream
-    optimizer
+    optimizer::Union{DataType,<:MOI.AbstractOptimizer,<:MOI.OptimizerWithAttributes}
     rng::Random.AbstractRNG
     length::Int
     log_each::Union{Int,Nothing}
